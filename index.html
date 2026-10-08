@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hydrogenic Quantum Orbital Simulator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="w-screen h-screen relative bg-[#07090e] text-slate-200">
+
+  <div id="viewport-container" class="absolute inset-0 z-0">
+    <canvas id="webgl-canvas" class="w-full h-full block"></canvas>
+  </div>
+
+  <header class="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-3 py-2 bg-[#0a0d14]/90 border-b border-slate-800/80 backdrop-blur text-xs">
+    
+    <!-- Left: Status dot and current orbital readout -->
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2">
+        <div class="flex flex-col">
+          <div class="flex items-center gap-1.5">
+            <span id="state-readout" class="font-mono-code text-sm font-semibold text-slate-100">Orbital: 3d (xy)</span>
+            <span id="telemetry-energy" class="text-[10px] font-mono-code text-blue-400 bg-blue-950/60 px-1 rounded border border-blue-900/60">-1.51 eV</span>
+          </div>
+          <span id="state-subtext" class="text-[10px] text-slate-400 font-mono-code">Shell n=3 • Cloverleaf geometry</span>
+        </div>
+      </div>
+
+      <div class="h-5 w-px bg-slate-800 hidden sm:block"></div>
+
+      <!-- Segmented Quantum Number Pickers -->
+      <div class="flex items-center gap-2 font-mono-code">
+        <!-- n Picker -->
+        <div class="flex items-center gap-0.5 bg-slate-900/90 p-0.5 rounded border border-slate-800" data-tip="Principal Quantum Number (n): Sets the hydrogen-like energy level and the overall radial scale of the orbital.">
+          <span class="text-slate-400 text-[10px] px-1 font-semibold">n</span>
+          <button data-n="1" data-tip="n = 1: First shell. It contains only the compact 1s orbital." class="n-btn w-5 h-5 rounded text-[11px] text-slate-400 hover:text-slate-200">1</button>
+          <button data-n="2" data-tip="n = 2: Second shell. It permits 2s and 2p orbitals." class="n-btn w-5 h-5 rounded text-[11px] text-slate-400 hover:text-slate-200">2</button>
+          <button data-n="3" data-tip="n = 3: Third shell. It permits 3s, 3p, and 3d orbitals." class="n-btn w-5 h-5 rounded text-[11px] bg-blue-600 text-white font-bold">3</button>
+          <button data-n="4" data-tip="n = 4: Fourth shell. It permits 4s, 4p, 4d, and 4f orbitals." class="n-btn w-5 h-5 rounded text-[11px] text-slate-400 hover:text-slate-200">4</button>
+        </div>
+
+        <!-- l Picker -->
+        <div class="flex items-center gap-0.5 bg-slate-900/90 p-0.5 rounded border border-slate-800" data-tip="Angular Momentum (l): Sets angular complexity and the number of angular nodes (s, p, d, f correspond to l = 0, 1, 2, 3).">
+          <span class="text-slate-400 text-[10px] px-1 font-semibold">l</span>
+          <button data-l="0" data-tip="s orbital (l = 0): Spherically symmetric with no angular nodes — like a smooth ball surrounding the nucleus." class="l-btn px-1.5 h-5 rounded text-[11px] text-slate-400 hover:text-slate-200">s</button>
+          <button data-l="1" data-tip="p orbital (l = 1): One angular node; its real forms have two main lobes — like a dumbbell with the nucleus at its center." class="l-btn px-1.5 h-5 rounded text-[11px] text-slate-400 hover:text-slate-200">p</button>
+          <button data-l="2" data-tip="d orbital (l = 2): Two angular nodes; most real forms have four lobes — like a four-leaf clover — while d_z² resembles two lobes with a ring around the middle." class="l-btn px-1.5 h-5 rounded text-[11px] bg-blue-600 text-white font-bold">d</button>
+          <button data-l="3" data-tip="f orbital (l = 3): Three angular nodes and intricate multi-lobed real forms — often resembling a flower or rosette. It becomes available at n = 4." class="l-btn px-1.5 h-5 rounded text-[11px] text-slate-600 opacity-40 cursor-not-allowed">f</button>
+        </div>
+
+        <!-- m Orientation Picker -->
+        <div class="hidden md:flex items-center gap-0.5 bg-slate-900/90 p-0.5 rounded border border-slate-800" data-tip="Magnetic Quantum Number (m): Selects the real angular component, changing the lobe orientation or nodal pattern in this visualization.">
+          <span class="text-slate-400 text-[10px] px-1 font-semibold">m</span>
+          <div id="quick-m-container" class="flex gap-0.5"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2 font-mono-code text-xs">
+      
+      <!-- Element selection -->
+      <div class="flex items-center gap-1 bg-slate-900/90 px-1.5 py-0.5 rounded border border-slate-800" data-tip="Atomic Number (Z): Nuclear charge. More protons pull the electron cloud closer inward.">
+        <span class="text-slate-400 text-[10px]">Z:</span>
+        <select id="select-z" class="bg-transparent text-slate-200 outline-none text-[11px] cursor-pointer">
+          <option value="1">H (Z=1)</option>
+          <option value="2">He⁺ (Z=2)</option>
+          <option value="3">Li²⁺ (Z=3)</option>
+          <option value="6">C⁵⁺ (Z=6)</option>
+        </select>
+      </div>
+
+      <!-- Distance Graph HUD Toggle Button -->
+      <button id="btn-toggle-hud" data-tip="Toggle Distance Graph: Shows radial probability P(r), its peak radius, and the orbital's radial and angular node counts." class="px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-slate-200 transition-colors text-[11px]">
+        Graph
+      </button>
+
+      <!-- Settings Dropdown Popover Button -->
+      <div class="relative">
+        <button id="btn-toggle-settings" data-tip="Options: Configure sampling resolution, dot diameter, cloud softness, and auto-rotation." class="px-2 py-1 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded text-slate-300 hover:text-slate-100 transition-colors text-[11px]" title="Simulation Settings">
+          ⚙
+        </button>
+
+        <!-- Compact Settings Dropdown Card -->
+        <div id="settings-menu" class="absolute right-0 top-8 w-56 bg-[#0c1017] border border-slate-800 rounded-lg p-3 shadow-2xl backdrop-blur font-mono-code text-xs hidden flex flex-col gap-2.5 z-30">
+          <div class="text-[10px] font-bold text-slate-400 tracking-wider border-b border-slate-800 pb-1">SIMULATION SETTINGS</div>
+          
+          <div class="flex items-center justify-between">
+            <span class="text-slate-400 text-[11px]">Dot Size:</span>
+            <div class="flex items-center gap-1.5">
+              <input id="slider-size" type="range" min="0.5" max="4.0" step="0.5" value="2.5" class="w-20">
+              <span id="label-size" class="text-slate-300 text-[11px] w-6 text-right">2.5</span>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <span class="text-slate-400 text-[11px]">Points:</span>
+            <select id="select-count" class="bg-slate-900 text-slate-200 border border-slate-700 rounded px-1.5 py-0.5 text-[11px] outline-none">
+              <option value="25000">25,000</option>
+              <option value="60000" selected>60,000</option>
+              <option value="100000">100,000</option>
+            </select>
+          </div>
+
+          <div class="flex items-center justify-between pt-1 border-t border-slate-800/80">
+            <span class="text-slate-400 text-[11px]">Auto Spin:</span>
+            <input id="check-spin" type="checkbox" checked class="rounded bg-slate-900 border-slate-700 cursor-pointer">
+          </div>
+
+          <div class="flex items-center justify-between">
+            <span class="text-slate-400 text-[11px]" data-tip="Cloud Blur: Softens the edges of probability dots without dimming the cloud or changing the measurement marker.">Cloud Blur:</span>
+            <input id="check-cloud-blur" type="checkbox" class="rounded bg-slate-900 border-slate-700 cursor-pointer">
+          </div>
+
+          <div class="flex items-center justify-between">
+            <span class="text-slate-400 text-[11px]" data-tip="Phase Density: Fades less-probable dots while retaining their blue positive or red negative phase color.">Phase Density:</span>
+            <input id="check-phase-density" type="checkbox" class="rounded bg-slate-900 border-slate-700 cursor-pointer">
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </header>
+
+  <div class="absolute bottom-9 left-1/2 -translate-x-1/2 z-20 flex flex-wrap items-center justify-center gap-2 px-3 py-1.5 bg-[#0a0d14]/90 border border-slate-800/90 rounded-lg shadow-2xl backdrop-blur font-mono-code text-xs">
+    
+    <!-- Working Cross-Section Slice Buttons -->
+    <div class="flex items-center gap-0.5 bg-slate-900/90 p-0.5 rounded border border-slate-800" data-tip="3D Cross-Section Cut: Slices away half of the cloud to expose internal nodal surfaces and cores.">
+      <span class="text-slate-400 text-[10px] px-1">Cut:</span>
+      <button data-plane="none" data-tip="Show the complete 3D orbital cloud without a cut." class="slice-btn px-2 py-0.5 rounded text-[11px] bg-blue-600 text-white font-semibold">None</button>
+      <button data-plane="xy" data-tip="Cut at Z = 0 (the XY plane): removes the positive-Z half to expose a horizontal cross-section." class="slice-btn px-2 py-0.5 rounded text-[11px] text-slate-300 hover:text-white">XY</button>
+      <button data-plane="xz" data-tip="Cut at Y = 0 (the XZ plane): removes the positive-Y half to expose a vertical cross-section." class="slice-btn px-2 py-0.5 rounded text-[11px] text-slate-300 hover:text-white">XZ</button>
+      <button data-plane="yz" data-tip="Cut at X = 0 (the YZ plane): removes the positive-X half to expose a vertical cross-section." class="slice-btn px-2 py-0.5 rounded text-[11px] text-slate-300 hover:text-white">YZ</button>
+    </div>
+
+    <div class="h-4 w-px bg-slate-800"></div>
+
+    <!-- Color Mode Options -->
+    <div class="flex items-center gap-0.5 bg-slate-900/90 p-0.5 rounded border border-slate-800">
+      <button data-color="0" data-tip="Phase Coloring: Blue represents positive wavefunction amplitude (+), Red represents negative (-)." class="color-btn px-2 py-0.5 rounded text-[11px] bg-blue-600 text-white font-semibold">Phase ±</button>
+      <button data-color="1" data-tip="Density Mode: Brighter dots represent higher local probability density; the phase sign is deliberately hidden." class="color-btn px-2 py-0.5 rounded text-[11px] text-slate-400 hover:text-white">Density</button>
+    </div>
+
+    <div class="h-4 w-px bg-slate-800"></div>
+
+    <!-- Wavefunction collapse detection button -->
+    <div class="flex items-center gap-1.5">
+      <button id="btn-measure" data-tip="Wavefunction Collapse: Samples one location from the displayed probability distribution and highlights it as a simulated measurement result." class="px-2.5 py-1 bg-amber-950/60 hover:bg-amber-900/80 text-amber-300 border border-amber-700/70 rounded transition-colors text-[11px] font-semibold flex items-center gap-1">
+        <span>Detect e⁻</span>
+      </button>
+      
+      <button id="btn-reset-view" data-tip="Reset 3D camera back to default angle." class="px-2 py-1 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700 rounded transition-colors text-[11px]" title="Reset View">
+        ↺
+      </button>
+    </div>
+  </div>
+
+  <footer class="fixed bottom-0 left-0 right-0 h-7 bg-[#080a0f] border-t border-slate-800/80 z-30 flex items-center justify-between px-3 text-[11px] font-mono-code text-slate-400">
+    <!-- Non-obstructing live hint text -->
+    <div class="flex items-center gap-2 overflow-hidden text-ellipsis whitespace-nowrap pr-4">
+      <span class="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span>
+      <span id="info-tooltip-text" class="text-slate-300 truncate">Hover over any control, button, or distance graph to see its physical meaning.</span>
+    </div>
+
+    <!-- Permanent Color Legend -->
+    <div class="flex items-center gap-3 shrink-0 text-[10px]">
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-blue-500 inline-block"></span> +Phase</span>
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-red-500 inline-block"></span> -Phase</span>
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-white inline-block"></span> Nucleus</span>
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full border border-amber-400 bg-amber-400/50 inline-block"></span> Electron</span>
+    </div>
+  </footer>
+
+  <aside id="radial-hud" class="absolute top-12 right-3 z-10 w-72 bg-[#0a0d14]/95 border border-slate-800 rounded-lg p-3 shadow-2xl backdrop-blur font-mono-code text-xs">
+    <div class="flex items-center justify-between mb-1.5">
+      <div class="flex flex-col">
+        <span class="font-semibold text-slate-200 tracking-wider text-[11px]">DISTANCE PROBABILITY</span>
+        <span class="text-[9px] text-slate-400">Electron presence likelihood vs radius r</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span id="rmax-readout" class="text-[10px] text-blue-400 font-semibold">Peak: 9.0 a₀</span>
+        <button id="btn-close-hud" class="text-slate-500 hover:text-slate-300 text-xs px-1" title="Hide Graph">✕</button>
+      </div>
+    </div>
+
+    <!-- 2D Canvas Graph -->
+    <div class="relative w-full h-24 bg-[#06080c] border border-slate-800 rounded overflow-hidden" data-tip="Hover over the curve to place a spherical guide at that radius; the readout reports the radial probability P(r), not the full 3D density.">
+      <canvas id="radial-canvas" class="w-full h-full block"></canvas>
+      <div id="radial-hover-info" class="absolute top-1 left-2 text-[9px] text-slate-400 pointer-events-none hidden">
+        r: 0.0 a₀ | Density: 0.00
+      </div>
+    </div>
+
+    <!-- Plain-English Quantum Properties -->
+    <div class="mt-2 grid grid-cols-3 gap-1 pt-2 border-t border-slate-800/80 text-[10px] text-center">
+      <div class="bg-slate-900/80 p-1 rounded border border-slate-800/80" data-tip="Radial Nodes (n - l - 1): Concentric spheres around the nucleus where finding an electron is strictly impossible.">
+        <div class="text-slate-400 text-[9px]">RADIAL NODES</div>
+        <div id="telemetry-rnodes" class="text-slate-200 font-semibold text-xs">0</div>
+      </div>
+      <div class="bg-slate-900/80 p-1 rounded border border-slate-800/80" data-tip="Angular Nodes (l): Flat or conical nodal planes passing through the nucleus with zero electron density.">
+        <div class="text-slate-400 text-[9px]">ANGULAR NODES</div>
+        <div id="telemetry-anodes" class="text-slate-200 font-semibold text-xs">2</div>
+      </div>
+      <div class="bg-slate-900/80 p-1 rounded border border-slate-800/80" data-tip="Average Electron Distance: Expected average distance from nucleus in Bohr radii (a₀ = 0.529 Å).">
+        <div class="text-slate-400 text-[9px]">AVG DISTANCE</div>
+        <div id="telemetry-meanr" class="text-slate-200 font-semibold text-xs">10.5 a₀</div>
+      </div>
+    </div>
+
+    <!-- Measurement Result Details Card -->
+    <div id="measurement-box" class="mt-2 pt-2 border-t border-slate-800/80 text-[10px] text-amber-300 hidden">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-slate-400 text-[9px] font-bold">DETECTED ELECTRON LOCATION:</span>
+        <button id="btn-cancel-meas" class="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[9px] transition-colors border border-slate-700" title="Cancel measurement and restore probability cloud">
+          ✕ Cancel
+        </button>
+      </div>
+      <div id="meas-pos" class="font-bold text-amber-200">+0.00, +0.00, +0.00 a₀</div>
+      <div id="meas-r" class="text-slate-400">Distance from nucleus: 0.00 a₀</div>
+    </div>
+  </aside>
+
+  <script id="worker-code" type="javascript/worker">
+/* High performance rejection sampling worker */
+    const FACTORIALS = [1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800, 39916800, 479001600];
+    function factorial(n) {
+      if (n < 0) return 1;
+      if (n < FACTORIALS.length) return FACTORIALS[n];
+      let res = FACTORIALS[FACTORIALS.length - 1];
+      for (let i = FACTORIALS.length; i <= n; i++) res *= i;
+      return res;
+    }
+
+    function assocLaguerre(k, alpha, x) {
+      if (k === 0) return 1.0;
+      if (k === 1) return 1.0 + alpha - x;
+      let prev2 = 1.0;
+      let prev1 = 1.0 + alpha - x;
+      let current = 0.0;
+      for (let j = 1; j < k; j++) {
+        current = ((2.0 * j + 1.0 + alpha - x) * prev1 - (j + alpha) * prev2) / (j + 1.0);
+        prev2 = prev1;
+        prev1 = current;
+      }
+      return current;
+    }
+
+    function assocLegendre(l, m, x) {
+      x = Math.max(-1.0, Math.min(1.0, x));
+      let pmm = 1.0;
+      if (m > 0) {
+        const somx2 = Math.sqrt((1.0 - x) * (1.0 + x));
+        let fact = 1.0;
+        for (let i = 1; i <= m; i++) {
+          pmm *= -fact * somx2;
+          fact += 2.0;
+        }
+      }
+      if (l === m) return pmm;
+
+      let pmmp1 = x * (2.0 * m + 1.0) * pmm;
+      if (l === m + 1) return pmmp1;
+
+      let pll = 0.0;
+      let prev2 = pmm;
+      let prev1 = pmmp1;
+      for (let ll = m + 2; ll <= l; ll++) {
+        pll = ((2.0 * ll - 1.0) * x * prev1 - (ll + m - 1.0) * prev2) / (ll - m);
+        prev2 = prev1;
+        prev1 = pll;
+      }
+      return pll;
+    }
+
+    function radialWavefunction(n, l, Z, r) {
+      if (r < 0) return 0.0;
+      const rho = (2.0 * Z * r) / n;
+      const k = n - l - 1;
+      const alpha = 2 * l + 1;
+      const normFactor = Math.sqrt(
+        Math.pow((2.0 * Z) / n, 3) * (factorial(k) / (2.0 * n * factorial(n + l)))
+      );
+      return normFactor * Math.exp(-rho / 2.0) * Math.pow(rho, l) * assocLaguerre(k, alpha, rho);
+    }
+
+    function realSphericalHarmonic(l, m, theta, phi) {
+      const mAbs = Math.abs(m);
+      const cosTheta = Math.cos(theta);
+      const norm = Math.sqrt(
+        ((2.0 * l + 1.0) / (4.0 * Math.PI)) * (factorial(l - mAbs) / factorial(l + mAbs))
+      );
+      const P = assocLegendre(l, mAbs, cosTheta);
+      if (m === 0) {
+        return norm * P;
+      } else if (m > 0) {
+        return Math.SQRT2 * Math.pow(-1, mAbs) * norm * P * Math.cos(m * phi);
+      } else {
+        return Math.SQRT2 * Math.pow(-1, mAbs) * norm * P * Math.sin(mAbs * phi);
+      }
+    }
+
+    self.onmessage = function(e) {
+      const { jobId, n, l, m, Z, count } = e.data;
+
+      const meanRadius = ((3 * n * n - l * (l + 1)) / (2 * Z));
+      const rCut = Math.max(16.0, meanRadius * 2.8 + 6.0);
+
+      // Estimate P_R,max
+      let pRMax = 1e-7;
+      const steps = 250;
+      for (let i = 0; i <= steps; i++) {
+        const rTest = (i / steps) * rCut;
+        const R = radialWavefunction(n, l, Z, rTest);
+        const pR = rTest * rTest * R * R;
+        if (pR > pRMax) pRMax = pR;
+      }
+      pRMax *= 1.05;
+
+      // Estimate angular max
+      let yMaxSq = 1e-6;
+      for (let i = 0; i <= 60; i++) {
+        const cosTheta = -1.0 + (2.0 * i) / 60;
+        const theta = Math.acos(cosTheta);
+        for (let j = 0; j <= 60; j++) {
+          const phi = (j / 60) * Math.PI * 2;
+          const Y = realSphericalHarmonic(l, m, theta, phi);
+          const ySq = Y * Y;
+          if (ySq > yMaxSq) yMaxSq = ySq;
+        }
+      }
+      yMaxSq *= 1.05;
+
+      const positions = new Float32Array(count * 3);
+      const phases = new Float32Array(count);
+      const radii = new Float32Array(count);
+      const densities = new Float32Array(count);
+      let maxDensity = 0;
+
+      let sampled = 0;
+      while (sampled < count) {
+        let r = 0;
+        while (true) {
+          const rCandidate = Math.random() * rCut;
+          const u = Math.random() * pRMax;
+          const R = radialWavefunction(n, l, Z, rCandidate);
+          const pR = rCandidate * rCandidate * R * R;
+          if (u <= pR) {
+            r = rCandidate;
+            break;
+          }
+        }
+
+        let theta = 0;
+        let phi = 0;
+        let psiVal = 0;
+        while (true) {
+          const cosTheta = -1.0 + Math.random() * 2.0;
+          const phiCandidate = Math.random() * Math.PI * 2.0;
+          const thetaCandidate = Math.acos(cosTheta);
+          const u = Math.random() * yMaxSq;
+          const Y = realSphericalHarmonic(l, m, thetaCandidate, phiCandidate);
+          if (u <= Y * Y) {
+            theta = thetaCandidate;
+            phi = phiCandidate;
+            const R = radialWavefunction(n, l, Z, r);
+            psiVal = R * Y;
+            break;
+          }
+        }
+
+        const sinTheta = Math.sin(theta);
+        const idx3 = sampled * 3;
+        positions[idx3]     = r * sinTheta * Math.cos(phi);
+        positions[idx3 + 1] = r * Math.cos(theta);
+        positions[idx3 + 2] = r * sinTheta * Math.sin(phi);
+
+        phases[sampled] = (psiVal >= 0) ? 1.0 : -1.0;
+        radii[sampled]  = r;
+        densities[sampled] = Math.abs(psiVal);
+        if (densities[sampled] > maxDensity) maxDensity = densities[sampled];
+        sampled++;
+      }
+
+      for (let i = 0; i < count; i++) densities[i] = maxDensity > 0 ? densities[i] / maxDensity : 0;
+      self.postMessage(
+        { jobId, positions, phases, radii, densities, count },
+        [positions.buffer, phases.buffer, radii.buffer, densities.buffer]
+      );
+    };
+  </script>
+  <script src="js/app.js"></script>
+</body>
+</html>

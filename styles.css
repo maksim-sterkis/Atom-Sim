@@ -1,0 +1,36 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: #07090e;
+  color: #e2e8f0;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.font-mono-code { font-family: 'JetBrains Mono', monospace; }
+
+input[type=range] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: #1e2633;
+  height: 4px;
+  border-radius: 2px;
+  outline: none;
+}
+
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #94a3b8;
+  cursor: pointer;
+  border: 1px solid #0f172a;
+}
+
+input[type=range]::-webkit-slider-thumb:hover { background: #f8fafc; }
